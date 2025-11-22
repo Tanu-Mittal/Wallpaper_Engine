@@ -1,105 +1,160 @@
-# video_wallpaper.py
-# Usage: python video_wallpaper.py "C:\path\to\video.mp4"
+# -*- coding: utf-8 -*-
 
 import sys
 import os
-import vlc
+import cv2
 import win32gui
 import win32con
 import win32api
-import time
+import numpy as np
+import ctypes
+from ctypes import wintypes
+import sys
+sys.stdout.reconfigure(encoding='utf-8')
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PID_FILE = os.path.join(BASE_DIR, "video_pid.txt")
 
-def find_workerw():
+print("Script started")
+with open("video_pid.txt", "w") as f:
+    import os
+    f.write(str(os.getpid()))
+
+
+class BITMAPINFOHEADER(ctypes.Structure):
+    _fields_ = [
+        ('biSize', wintypes.DWORD),
+        ('biWidth', wintypes.LONG),
+        ('biHeight', wintypes.LONG),
+        ('biPlanes', wintypes.WORD),
+        ('biBitCount', wintypes.WORD),
+        ('biCompression', wintypes.DWORD),
+        ('biSizeImage', wintypes.DWORD),
+        ('biXPelsPerMeter', wintypes.LONG),
+        ('biYPelsPerMeter', wintypes.LONG),
+        ('biClrUsed', wintypes.DWORD),
+        ('biClrImportant', wintypes.DWORD)
+    ]
+
+class BITMAPINFO(ctypes.Structure):
+    _fields_ = [
+        ('bmiHeader', BITMAPINFOHEADER),
+        ('bmiColors', wintypes.DWORD * 3)
+    ]
+
+gdi32 = ctypes.WinDLL('gdi32')
+CreateDIBitmap = gdi32.CreateDIBitmap
+CreateDIBitmap.argtypes = [
+    wintypes.HDC,
+    ctypes.POINTER(BITMAPINFOHEADER),
+    wintypes.DWORD,
+    ctypes.c_void_p,
+    ctypes.POINTER(BITMAPINFO),
+    wintypes.UINT,
+]
+CreateDIBitmap.restype = wintypes.HBITMAP
+
+def get_workerw():
     progman = win32gui.FindWindow("Progman", None)
-    win32gui.SendMessageTimeout(progman, 0x052C, 0, 0,
-                                win32con.SMTO_NORMAL, 1000)
+    win32gui.SendMessageTimeout(progman, 0x052C, 0, 0, 0, 1000)
+    workerw = [None]
+    def enum_windows(hwnd, lParam):
+        shell = win32gui.FindWindowEx(hwnd, 0, "SHELLDLL_DefView", None)
+        if shell != 0:
+            workerw[0] = win32gui.FindWindowEx(0, hwnd, "WorkerW", None)
+        return True
+    win32gui.EnumWindows(enum_windows, None)
+    return workerw[0]
 
-    workerw = None
+def draw_frame(hwnd, frame):
+    h, w = frame.shape[:2]
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    hdc = win32gui.GetDC(hwnd)
+    hdc_mem = win32gui.CreateCompatibleDC(hdc)
+    bmi = BITMAPINFO()
+    bmi.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+    bmi.bmiHeader.biWidth = w
+    bmi.bmiHeader.biHeight = -h  # top-down bitmap
+    bmi.bmiHeader.biPlanes = 1
+    bmi.bmiHeader.biBitCount = 24
+    bmi.bmiHeader.biCompression = win32con.BI_RGB
+    bmi.bmiHeader.biSizeImage = 0
+    bmi.bmiHeader.biXPelsPerMeter = 0
+    bmi.bmiHeader.biYPelsPerMeter = 0
+    bmi.bmiHeader.biClrUsed = 0
+    bmi.bmiHeader.biClrImportant = 0
+    dib = CreateDIBitmap(
+        hdc,
+        ctypes.byref(bmi.bmiHeader),
+        win32con.CBM_INIT,
+        frame.ctypes.data_as(ctypes.c_void_p),
+        ctypes.byref(bmi),
+        win32con.DIB_RGB_COLORS,
+    )
+    old_bmp = win32gui.SelectObject(hdc_mem, dib)
+    win32gui.BitBlt(hdc, 0, 0, w, h, hdc_mem, 0, 0, win32con.SRCCOPY)
+    win32gui.SelectObject(hdc_mem, old_bmp)
+    win32gui.DeleteObject(dib)
+    win32gui.DeleteDC(hdc_mem)
+    win32gui.ReleaseDC(hwnd, hdc)
 
-    def enum_handler(hwnd, _):
-        nonlocal workerw
-        if win32gui.GetClassName(hwnd) == "WorkerW":
-            child = win32gui.FindWindowEx(hwnd, 0, "SHELLDLL_DefView", None)
-            if child == 0:
-                workerw = hwnd
+def add_to_startup(script_path, video_path):
+    startup_folder = os.path.join(os.getenv('APPDATA'), 
+        'Microsoft\\Windows\\Start Menu\\Programs\\Startup')
+    shortcut_path = os.path.join(startup_folder, 'VideoWallpaper.bat')
+    with open(shortcut_path, 'w') as file:
+        file.write(f'python "{script_path}" "{video_path}"\n')
 
-    win32gui.EnumWindows(enum_handler, None)
-    return workerw
+def play_wallpaper(video_path, persist=True):
+    print("Requested video:", video_path)
+    cap = cv2.VideoCapture(video_path)
+    print("Video opened?", cap.isOpened())
+    if not cap.isOpened():
+        print("Cannot open video", video_path)
+        return
+    workerw = get_workerw()
+    print("WorkerW:", workerw)
+    if workerw is None:
+        print("WorkerW not found")
+        return
+    print("Creating window...")
 
-def play_video(video_path):
-    # Store PID for stopping later
-    with open(PID_FILE, "w") as f:
-        f.write(str(os.getpid()))
-
-    # Screen size
-    width = win32api.GetSystemMetrics(0)
-    height = win32api.GetSystemMetrics(1)
-
-    # Create a borderless fullscreen window
-    import tkinter as tk
-    root = tk.Tk()
-    root.overrideredirect(True)
-    root.geometry(f"{width}x{height}+0+0")
-
-    # Embed frame inside Tk window
-    frame = tk.Frame(root, width=width, height=height)
-    frame.pack()
-    root.update()
-
-    hwnd = frame.winfo_id()
-
-    # Attach to WorkerW to go behind desktop icons
-    workerw = find_workerw()
-    if workerw:
-        win32gui.SetParent(hwnd, workerw)
-
-    # VLC Player
-        # VLC Player (stable config)
-    instance = vlc.Instance([
-        "--no-video-title-show",
-        "--no-osd",
-        "--quiet",
-        "--no-sub-autodetect-file",
-        "--loop",
-        "--no-xlib",
-        "--vout=win32"      # 100% stable for wallpapers
-    ])
-
-
-
-    player = instance.media_player_new()
-
-    media = instance.media_new(video_path)
-    player.set_media(media)
-
-    # Assign video output to Tk window
-    player.set_hwnd(hwnd)
-    time.sleep(0.5)   # allow VLC to attach to window
-
-
-    # Start playing
-    player.play()
-    # Force resize/stretch to fill screen
-    player.video_set_scale(0)
-    player.video_set_aspect_ratio(f"{width}:{height}")
-
-
-    # Loop forever
+    wnd_class = win32gui.WNDCLASS()
+    wnd_class.hInstance = win32api.GetModuleHandle(None)
+    wnd_class.lpszClassName = "VideoWallpaper"
+    wnd_class.style = win32con.CS_HREDRAW | win32con.CS_VREDRAW
+    wnd_class.hCursor = win32gui.LoadCursor(0, win32con.IDC_ARROW)
+    wnd_class.hbrBackground = win32con.COLOR_BACKGROUND + 1
+    wnd_class.lpfnWndProc = win32gui.DefWindowProc
+    classAtom = win32gui.RegisterClass(wnd_class)
+    hwnd = win32gui.CreateWindowEx(
+        win32con.WS_EX_TOOLWINDOW | win32con.WS_EX_LAYERED | win32con.WS_EX_TRANSPARENT,
+        classAtom,
+        None,
+        win32con.WS_POPUP | win32con.WS_VISIBLE,
+        0, 0,
+        win32api.GetSystemMetrics(0),
+        win32api.GetSystemMetrics(1),
+        workerw,
+        0,
+        wnd_class.hInstance,
+        None
+    )
+    win32gui.SetLayeredWindowAttributes(hwnd, 0, 255, win32con.LWA_ALPHA)
+    # Z-order fix so icons stay on top
+    win32gui.SetWindowPos(hwnd, win32con.HWND_BOTTOM, 0, 0, 
+        win32api.GetSystemMetrics(0), win32api.GetSystemMetrics(1), win32con.SWP_NOACTIVATE)
+    print(" Video wallpaper running... CTRL+C to stop")
+    if persist:
+        add_to_startup(os.path.abspath(__file__), video_path)
     while True:
-        time.sleep(0.1)
+        ret, frame = cap.read()
+        if not ret:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            continue
+        draw_frame(hwnd, frame)
+        cv2.waitKey(30)
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python video_wallpaper.py <video-file>")
-        sys.exit(1)
-
-    video = sys.argv[1]
-
-    if not os.path.exists(video):
-        print("Video not found!")
-        sys.exit(1)
-
-    play_video(video)
+        print("Usage: python video_wallpaper.py path-to-video")
+    else:
+        play_wallpaper(sys.argv[1], persist=True)

@@ -1,33 +1,29 @@
-# stop_video.py
-
-import os
-import signal
+import psutil
+import win32gui
+import win32con
 import time
-import sys
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PID_FILE = os.path.join(BASE_DIR, "video_pid.txt")
-
-def stop_pid(pid):
-    try:
-        os.kill(pid, signal.SIGTERM)
+# Find and close overlay window (update title if needed)
+def close_window_by_title(window_title):
+    hwnd = win32gui.FindWindow(None, window_title)
+    if hwnd:
+        win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
         time.sleep(0.5)
-        os.kill(pid, signal.SIGKILL)
-        return True
-    except:
-        return False
+        print(f"Closed window: {window_title}")
+    else:
+        print(f"No window found with title: {window_title}")
+
+# Kill all video_wallpaper.py processes
+def kill_vidwallpaper():
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        try:
+            if 'video_wallpaper.py' in ' '.join(proc.info.get('cmdline', [])):
+                proc.kill()
+                print(f"Killed process: {proc.info['pid']}")
+        except Exception:
+            pass
 
 if __name__ == "__main__":
-    if not os.path.exists(PID_FILE):
-        print("No video wallpaper running.")
-        sys.exit(0)
-
-    with open(PID_FILE, "r") as f:
-        pid = int(f.read().strip())
-
-    if stop_pid(pid):
-        print("Video wallpaper stopped.")
-    else:
-        print("Failed to stop video.")
-
-    os.remove(PID_FILE)
+    # Try both methods
+    close_window_by_title("Video Wallpaper Overlay")  # Update to your actual window title!
+    kill_vidwallpaper()
