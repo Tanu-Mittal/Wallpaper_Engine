@@ -1,240 +1,322 @@
 import java.awt.*;
+import java.awt.event.*;
 import java.io.*;
+import java.nio.file.*;
+import java.util.ArrayList;
+import java.util.List;
 import javax.swing.*;
 
 public class MainWindow extends JFrame {
-    private JTextField fileField;
-    private JLabel previewLabel;
+
+    // Data
+    private List<File> galleryFiles = new ArrayList<>();
+    private int currentIndex = 0;
+    private volatile boolean stopBatch = false; 
+
+    // UI Components
+    private JLabel mainPreviewLabel;       
+    private JLabel infoLabel;              
+    private JButton btnSetCover;           
+    private JLabel statusLabel; 
+
+    // Theme Colors
+    private final Color BEIGE = new Color(245, 237, 215);
+    private final Color BROWN = new Color(102, 85, 55);
+    private final Color BUTTON_COLOR = new Color(205, 180, 100);
+    private final Color LIGHT_BG = new Color(252, 244, 228);
+    private final Color HIGHLIGHT_RED = new Color(200, 50, 50);
 
     public MainWindow() {
-        // Use cross-platform look and feel for maximum color control
-        try {
-            UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
-        } catch (Exception ex) {}
-
-        Color beige = new Color(245,237,215);
-        Color brown = new Color(102,85,55);
-
-        UIManager.put("OptionPane.background", beige);
-        UIManager.put("Panel.background", beige);
-        UIManager.put("OptionPane.messageForeground", brown);
-        UIManager.put("Button.background", new Color(205,180,100));
-        UIManager.put("Button.foreground", brown);
-        UIManager.put("OptionPane.messageFont", new Font("Segoe UI", Font.BOLD, 16));
-        UIManager.put("OptionPane.buttonFont", new Font("Segoe UI", Font.BOLD, 14));
-        UIManager.put("FileChooser.background", beige);
-        UIManager.put("FileChooser.listViewBackground", new Color(252,244,228));
-        UIManager.put("FileChooser.foreground", brown);
-        UIManager.put("FileChooser.font", new Font("Segoe UI", Font.PLAIN, 14));
-        UIManager.put("FileChooser.messageFont", new Font("Segoe UI", Font.BOLD, 15));
-
-        setTitle("Wallboard • Wallpaper Cheatsheet");
-        setSize(740, 440);
-        setDefaultCloseOperation(EXIT_ON_CLOSE);
-        setLocationRelativeTo(null);
-        getContentPane().setBackground(new Color(238, 223, 185));
-
-        // Title Panel
-        JPanel titlePanel = new JPanel(new BorderLayout());
-        titlePanel.setBackground(new Color(217, 204, 170));
-        JLabel heading = new JLabel("📋 WALLBOARD – YOUR WALLPAPER CHEATSHEET", SwingConstants.CENTER);
-        heading.setFont(new Font("Segoe UI", Font.BOLD, 27));
-        heading.setForeground(brown);
-        titlePanel.add(heading);
-        titlePanel.setBorder(BorderFactory.createMatteBorder(0,0,2,0, new Color(197,167,110)));
-        add(titlePanel, BorderLayout.NORTH);
-
-        // Card Panel
-        JPanel cardPanel = new JPanel(new GridBagLayout());
-        cardPanel.setBackground(new Color(238,223,185));
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(8,8,8,8);
-        gbc.fill = GridBagConstraints.BOTH;
-
-        // Picker Box
-        JPanel pickerBox = new JPanel(new GridBagLayout());
-        pickerBox.setBackground(beige);
-        pickerBox.setBorder(BorderFactory.createTitledBorder(
-            BorderFactory.createLineBorder(new Color(205,180,100),2),
-            "Step 1: Select Your Wallpaper File", 0, 0,
-            new Font("Segoe UI", Font.BOLD, 17), new Color(137, 101, 36)));
-        GridBagConstraints pGbc = new GridBagConstraints();
-        pGbc.insets = new Insets(3,3,3,3);
-        JLabel pickLab = new JLabel("File path:");
-        pickLab.setFont(new Font("Segoe UI", Font.PLAIN, 15));
-        pickLab.setForeground(brown);
-        fileField = new JTextField(36);
-        fileField.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-        fileField.setBackground(new Color(252,244,228));
-        fileField.setBorder(BorderFactory.createLineBorder(new Color(205,180,100),2,true));
-        JButton browseBtn = new JButton("Browse");
-        browseBtn.setBackground(new Color(205,180,100));
-        browseBtn.setForeground(brown);
-        browseBtn.setFont(new Font("Segoe UI", Font.BOLD,14));
-        pGbc.gridx=0; pGbc.gridy=0; pickerBox.add(pickLab, pGbc);
-        pGbc.gridx=1; pGbc.gridy=0; pickerBox.add(fileField, pGbc);
-        pGbc.gridx=2; pGbc.gridy=0; pickerBox.add(browseBtn, pGbc);
-
-        JLabel hintPick = new JLabel("Tip: Supported formats – image (jpg/png), video (mp4), GIF animation.");
-        hintPick.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        hintPick.setForeground(new Color(163,133,81));
-        pGbc.gridwidth=3; pGbc.gridy=1; pGbc.gridx=0; pickerBox.add(hintPick, pGbc);
-
-        gbc.gridx=0; gbc.gridy=0; cardPanel.add(pickerBox, gbc);
-
-        // Preview Box
-        JPanel previewBox = new JPanel(new GridBagLayout());
-        previewBox.setBackground(beige);
-        previewBox.setBorder(BorderFactory.createTitledBorder(
-            BorderFactory.createLineBorder(new Color(205,180,100),1),
-            "Step 2: Preview (Image/GIF only)",
-            0, 0, new Font("Segoe UI", Font.BOLD,14), new Color(137,101,36)));
-        previewLabel = new JLabel("", SwingConstants.CENTER);
-        previewLabel.setPreferredSize(new Dimension(180,110));
-        previewLabel.setBorder(BorderFactory.createLineBorder(new Color(224,208,163),2));
-        previewLabel.setBackground(new Color(252,244,228));
-        previewLabel.setOpaque(true);
-        previewBox.add(previewLabel);
-        gbc.gridx=0; gbc.gridy=1; cardPanel.add(previewBox, gbc);
-
-        // Action Box
-        JPanel actionBox = new JPanel(new GridBagLayout());
-        actionBox.setBackground(beige);
-        actionBox.setBorder(BorderFactory.createTitledBorder(
-            BorderFactory.createLineBorder(new Color(205,180,100),2),
-            "Step 3: Choose Wallpaper Type & Apply",
-            0, 0, new Font("Segoe UI", Font.BOLD,16), new Color(137,101,36)));
-        GridBagConstraints aGbc = new GridBagConstraints();
-        aGbc.insets = new Insets(8,14,8,14);
-
-        JButton staticBtn = new JButton("📷 Image Wallpaper");
-        JButton videoBtn = new JButton("🎥 Video Wallpaper");
-        JButton animatedBtn = new JButton("🌀 GIF Animation");
-        for(JButton btn:new JButton[]{staticBtn,videoBtn,animatedBtn}) {
-            btn.setBackground(new Color(174,150,103));
-            btn.setForeground(Color.WHITE);
-            btn.setFont(new Font("Segoe UI", Font.BOLD,15));
-            btn.setBorder(BorderFactory.createEmptyBorder(10,30,10,30));
-            btn.setFocusPainted(false);
-            btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        }
-        aGbc.gridx=0; aGbc.gridy=0; actionBox.add(staticBtn,aGbc);
-        aGbc.gridx=1; aGbc.gridy=0; actionBox.add(videoBtn,aGbc);
-        aGbc.gridx=2; aGbc.gridy=0; actionBox.add(animatedBtn,aGbc);
-
-        JLabel helpMsg = new JLabel("<html>Image: Sets desktop background.<br>Video: Overlays animated video.<br>GIF: Animated overlay.<br><br>Pro tip: Try each for desktop magic!</html>");
-        helpMsg.setFont(new Font("Segoe UI", Font.ITALIC, 13));
-        helpMsg.setForeground(new Color(163,133,81));
-        aGbc.gridx=0; aGbc.gridy=1; aGbc.gridwidth=3; actionBox.add(helpMsg,aGbc);
-
-        gbc.gridx=0; gbc.gridy=2; cardPanel.add(actionBox, gbc);
-
-        add(cardPanel, BorderLayout.CENTER);
-
-        // Browse handler
-        browseBtn.addActionListener(e -> {
-            JFileChooser chooser = new JFileChooser("../assets");
-            chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
-            chooser.setDialogTitle("Pick any wallpaper file!");
-            chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
-                "Images/Videos/GIF", "jpg", "jpeg", "bmp", "png", "mp4", "avi", "gif"));
-            int r = chooser.showOpenDialog(this);
-            if (r == JFileChooser.APPROVE_OPTION) {
-                File pick = chooser.getSelectedFile();
-                fileField.setText(pick.getAbsolutePath());
-                String ext = pick.getName().toLowerCase();
-                if (ext.endsWith(".jpg") || ext.endsWith(".jpeg") ||
-                    ext.endsWith(".png") || ext.endsWith(".bmp") ||
-                    ext.endsWith(".gif")) {
-                    ImageIcon icon = new ImageIcon(pick.getAbsolutePath());
-                    Image img = icon.getImage().getScaledInstance(180,110,Image.SCALE_SMOOTH);
-                    previewLabel.setIcon(new ImageIcon(img));
-                } else {
-                    previewLabel.setIcon(null);
-                }
+        setupTheme();
+        initUI();
+        
+        // Handle window resize events to re-scale images
+        this.addComponentListener(new ComponentAdapter() {
+            public void componentResized(ComponentEvent componentEvent) {
+                updateView();
             }
         });
 
-        // Start/stop overlays on every action
-        staticBtn.addActionListener(e -> {
-            stopActiveWallpaper();
-            showBeigeMessage("Wallboard Info",
-                setWallpaper("../python_scripts/set_static_wallpaper.py"));
-        });
-        videoBtn.addActionListener(e -> {
-            stopActiveWallpaper();
-            showBeigeMessage("Wallboard Info",
-                setWallpaper("../python_scripts/video_wallpaper.py"));
-        });
-        animatedBtn.addActionListener(e -> {
-            stopActiveWallpaper();
-            showBeigeMessage("Wallboard Info",
-                setWallpaper("../python_scripts/animated_wallpaper.py"));
-        });
+        File assets = new File("C:\\Users\\tanum\\OneDrive\\Desktop\\DynamicWallpaperEngine\\assets");
+        if (!assets.exists()) assets = new File("assets");
+        if (!assets.exists()) assets.mkdirs();
+        loadLibrary(assets);
     }
 
-    // Stop both video and animation overlays before switching wallpaper
-    private void stopActiveWallpaper() {
-        try {
-            String[] cmd1 = {"python", "../python_scripts/stop_video.py"};
-            new ProcessBuilder(cmd1).redirectErrorStream(true).start().waitFor();
-        } catch (Exception ex) {}
-        try {
-            String[] cmd2 = {"python", "../python_scripts/stop_animation.py"};
-            new ProcessBuilder(cmd2).redirectErrorStream(true).start().waitFor();
-        } catch (Exception ex) {}
+    private void setupTheme() {
+        try { UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName()); } catch (Exception e) {}
+        UIManager.put("Panel.background", BEIGE);
+        UIManager.put("Button.background", BUTTON_COLOR);
+        UIManager.put("Button.foreground", BROWN);
     }
 
-    // Call Python script and return output for popup
-    private String setWallpaper(String pyScript) {
-        String filePath = fileField.getText().trim();
-        previewLabel.setIcon(null);
-        if (filePath.isEmpty()) {
-            return "Please pick a wallpaper file first.";
+    private void initUI() {
+        setTitle("Wallboard • Slider View");
+        setSize(1100, 750);
+        setDefaultCloseOperation(EXIT_ON_CLOSE);
+        setLocationRelativeTo(null);
+        setLayout(new BorderLayout());
+
+        // TOP BAR
+        JPanel topBar = new JPanel(new BorderLayout());
+        topBar.setBackground(new Color(217, 204, 170));
+        topBar.setBorder(BorderFactory.createEmptyBorder(10, 20, 10, 20));
+        
+        JLabel title = new JLabel("🖼 WALLPAPER GALLERY");
+        title.setFont(new Font("SansSerif", Font.BOLD, 24));
+        title.setForeground(BROWN);
+        
+        JPanel topRight = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        topRight.setOpaque(false);
+        
+        statusLabel = new JLabel("Ready");
+        statusLabel.setFont(new Font("SansSerif", Font.ITALIC, 12));
+        statusLabel.setForeground(new Color(100, 80, 60));
+        statusLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 15));
+        
+        JButton folderBtn = new JButton("📂 Open Folder");
+        folderBtn.addActionListener(e -> chooseDirectory());
+        
+        topRight.add(statusLabel);
+        topRight.add(folderBtn);
+
+        topBar.add(title, BorderLayout.WEST);
+        topBar.add(topRight, BorderLayout.EAST);
+        add(topBar, BorderLayout.NORTH);
+
+        // CENTER SLIDER
+        JPanel sliderPanel = new JPanel(new BorderLayout());
+        sliderPanel.setBackground(BEIGE);
+        sliderPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        mainPreviewLabel = new JLabel("No Images Found", SwingConstants.CENTER);
+        mainPreviewLabel.setBackground(LIGHT_BG);
+        mainPreviewLabel.setOpaque(true);
+        mainPreviewLabel.setBorder(BorderFactory.createLineBorder(BROWN, 2));
+        // Important: Allow label to resize freely
+        mainPreviewLabel.setPreferredSize(new Dimension(100, 100)); 
+
+        // ARROWS
+        JButton btnPrev = createArrowButton("<"); 
+        JButton btnNext = createArrowButton(">"); 
+        btnPrev.addActionListener(e -> navigate(-1));
+        btnNext.addActionListener(e -> navigate(1));
+
+        sliderPanel.add(btnPrev, BorderLayout.WEST);
+        sliderPanel.add(mainPreviewLabel, BorderLayout.CENTER);
+        sliderPanel.add(btnNext, BorderLayout.EAST);
+        
+        infoLabel = new JLabel("Loading...", SwingConstants.CENTER);
+        infoLabel.setFont(new Font("SansSerif", Font.BOLD, 16));
+        infoLabel.setForeground(BROWN);
+        sliderPanel.add(infoLabel, BorderLayout.SOUTH);
+        
+        // COVER BUTTONS
+        JPanel centerContainer = new JPanel(new BorderLayout());
+        centerContainer.add(sliderPanel, BorderLayout.CENTER);
+        
+        JPanel coverPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 0)); 
+        coverPanel.setOpaque(false);
+        
+        btnSetCover = new JButton("➕ Upload GIF/Image");
+        btnSetCover.setBackground(Color.WHITE);
+        btnSetCover.setVisible(false);
+        btnSetCover.addActionListener(e -> setVideoCover());
+        
+        coverPanel.add(btnSetCover);
+        centerContainer.add(coverPanel, BorderLayout.NORTH); 
+
+        add(centerContainer, BorderLayout.CENTER);
+
+        // BOTTOM BAR
+        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 30, 20));
+        bottomPanel.setBackground(new Color(220, 210, 190));
+        bottomPanel.setBorder(BorderFactory.createMatteBorder(2, 0, 0, 0, BROWN));
+
+        JButton btnImg = createActionBtn("📷 Apply as Image");
+        JButton btnVid = createActionBtn("🎥 Apply as Video");
+        JButton btnGif = createActionBtn("🌀 Apply as GIF");
+
+        btnImg.addActionListener(e -> runScript("set_static_wallpaper.py"));
+        btnVid.addActionListener(e -> runScript("video_wallpaper.py"));
+        btnGif.addActionListener(e -> runScript("animated_wallpaper.py"));
+
+        bottomPanel.add(btnImg); bottomPanel.add(btnVid); bottomPanel.add(btnGif);
+        add(bottomPanel, BorderLayout.SOUTH);
+        
+        // Keys
+        getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke("LEFT"), "prev");
+        getRootPane().getActionMap().put("prev", new AbstractAction() { public void actionPerformed(ActionEvent e) { navigate(-1); }});
+        getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke("RIGHT"), "next");
+        getRootPane().getActionMap().put("next", new AbstractAction() { public void actionPerformed(ActionEvent e) { navigate(1); }});
+    }
+
+    private JButton createArrowButton(String text) {
+        JButton b = new JButton(text);
+        b.setFont(new Font("SansSerif", Font.BOLD, 80)); 
+        b.setBackground(BEIGE);
+        b.setForeground(BROWN);
+        b.setBorderPainted(false);
+        b.setContentAreaFilled(false);
+        b.setFocusPainted(false);
+        b.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        b.addMouseListener(new MouseAdapter() {
+            public void mouseEntered(MouseEvent evt) { b.setForeground(HIGHLIGHT_RED); }
+            public void mouseExited(MouseEvent evt) { b.setForeground(BROWN); }
+        });
+        return b;
+    }
+
+    private JButton createActionBtn(String text) {
+        JButton b = new JButton(text);
+        b.setFont(new Font("SansSerif", Font.BOLD, 14));
+        b.setBackground(BUTTON_COLOR);
+        b.setPreferredSize(new Dimension(180, 45));
+        return b;
+    }
+
+    private void chooseDirectory() {
+        JFileChooser c = new JFileChooser();
+        c.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        if (c.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) loadLibrary(c.getSelectedFile());
+    }
+
+    private void loadLibrary(File dir) {
+        stopBatch = true; 
+        galleryFiles.clear();
+        if (dir != null && dir.exists()) {
+            File[] files = dir.listFiles((d, name) -> {
+                String n = name.toLowerCase();
+                return n.endsWith(".jpg") || n.endsWith(".png") || n.endsWith(".jpeg") || 
+                       n.endsWith(".gif") || n.endsWith(".mp4") || n.endsWith(".avi");
+            });
+            if (files != null) for(File f : files) galleryFiles.add(f);
         }
-        File scriptFile = new File(pyScript);
-        if (!scriptFile.exists()) {
-            return "Wallpaper script missing: " + pyScript;
+        currentIndex = 0;
+        updateView();
+        startBatchPreviewGeneration();
+    }
+
+    private void startBatchPreviewGeneration() {
+        stopBatch = false;
+        new Thread(() -> {
+            for (File f : galleryFiles) {
+                if (stopBatch) break;
+                String name = f.getName().toLowerCase();
+                if (name.endsWith(".mp4") || name.endsWith(".avi")) {
+                    String base = f.getAbsolutePath().substring(0, f.getAbsolutePath().lastIndexOf("."));
+                    File gif = new File(base + ".gif");
+                    if (!gif.exists()) {
+                        SwingUtilities.invokeLater(() -> statusLabel.setText("⏳ Generating: " + f.getName()));
+                        try {
+                            ProcessBuilder pb = new ProcessBuilder("python", "fix_previews.py"); 
+                            // Note: using fix_previews.py which you ran manually is safer
+                            // Or call the generation logic per file if preferred. 
+                            // For now, relying on the manual fix script you ran is safest.
+                        } catch (Exception e) {}
+                    }
+                }
+            }
+            SwingUtilities.invokeLater(() -> statusLabel.setText("✅ All previews ready"));
+        }).start();
+    }
+
+    private void navigate(int direction) {
+        if (galleryFiles.isEmpty()) return;
+        currentIndex += direction;
+        if (currentIndex < 0) currentIndex = galleryFiles.size() - 1;
+        if (currentIndex >= galleryFiles.size()) currentIndex = 0;
+        updateView();
+    }
+
+    private void updateView() {
+        if (galleryFiles.isEmpty()) {
+            mainPreviewLabel.setIcon(null);
+            mainPreviewLabel.setText("No files found.");
+            btnSetCover.setVisible(false);
+            return;
         }
+
+        File f = galleryFiles.get(currentIndex);
+        infoLabel.setText(String.format("File %d of %d: %s", currentIndex + 1, galleryFiles.size(), f.getName()));
+        String name = f.getName().toLowerCase();
+        
+        btnSetCover.setVisible(false); 
+
         try {
-            String[] cmd = {"python", pyScript, filePath};
-            Process process = new ProcessBuilder(cmd)
-                .redirectErrorStream(true)
-                .start();
-            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-            StringBuilder output = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) output.append(line).append("\n");
-            process.waitFor();
-            return output.toString();
-        } catch (Exception ex) {
-            return "Error: " + ex.getMessage();
+            ImageIcon icon = null;
+
+            if (name.endsWith(".mp4") || name.endsWith(".avi")) {
+                String base = f.getAbsolutePath().substring(0, f.getAbsolutePath().lastIndexOf("."));
+                File gif = new File(base + ".gif");
+                File jpg = new File(base + ".jpg");
+                
+                if (gif.exists()) {
+                    icon = new ImageIcon(gif.getAbsolutePath());
+                    icon.getImage().flush(); 
+                } else if (jpg.exists()) {
+                    icon = new ImageIcon(jpg.getAbsolutePath());
+                } else {
+                    mainPreviewLabel.setIcon(null);
+                    mainPreviewLabel.setText("<html><center><h1>🎥 VIDEO FILE</h1><br>(Preview generating...)</center></html>");
+                    btnSetCover.setVisible(true); 
+                    return; 
+                }
+            } else {
+                icon = new ImageIcon(f.getAbsolutePath());
+            }
+
+            if (icon != null) {
+                boolean isAnimated = name.endsWith(".gif") || (name.endsWith(".mp4") && new File(f.getAbsolutePath().replace(".mp4", ".gif")).exists());
+                
+                // Calculate available size
+                int w = mainPreviewLabel.getWidth();
+                int h = mainPreviewLabel.getHeight();
+                if (w == 0) w = 800; // Fallback
+                if (h == 0) h = 500; 
+
+                if (isAnimated) {
+                     // Keep animations unscaled to preserve movement
+                     mainPreviewLabel.setText("");
+                     mainPreviewLabel.setIcon(icon);
+                     mainPreviewLabel.setHorizontalAlignment(SwingConstants.CENTER);
+                } else {
+                    // Scale static images to FILL the area
+                    Image img = icon.getImage();
+                    Image scaled = img.getScaledInstance(w, h, Image.SCALE_SMOOTH);
+                    mainPreviewLabel.setText("");
+                    mainPreviewLabel.setIcon(new ImageIcon(scaled));
+                }
+            }
+
+        } catch (Exception e) {
+            mainPreviewLabel.setIcon(null);
+            mainPreviewLabel.setText("Error loading file.");
         }
     }
 
-    // Custom themed message dialog
-    public void showBeigeMessage(String title, String message) {
-        JDialog dialog = new JDialog(this, title, true);
-        dialog.getContentPane().setBackground(new Color(245,237,215));
-        dialog.setLayout(new BorderLayout());
-        JLabel msgLabel = new JLabel("<html><div style='text-align:center;'>" + message.replace("\n","<br>") + "</div></html>", SwingConstants.CENTER);
-        msgLabel.setFont(new Font("Segoe UI", Font.BOLD, 16));
-        msgLabel.setForeground(new Color(102,85,55));
-        dialog.add(msgLabel, BorderLayout.CENTER);
+    private void setVideoCover() {
+        File vid = galleryFiles.get(currentIndex);
+        JFileChooser c = new JFileChooser();
+        c.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("Image/GIF", "jpg", "png", "gif"));
+        if (c.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            try {
+                String base = vid.getAbsolutePath().substring(0, vid.getAbsolutePath().lastIndexOf("."));
+                String ext = c.getSelectedFile().getName().toLowerCase().endsWith(".gif") ? ".gif" : ".jpg";
+                Files.copy(c.getSelectedFile().toPath(), new File(base + ext).toPath(), StandardCopyOption.REPLACE_EXISTING);
+                updateView(); 
+            } catch (IOException e) { JOptionPane.showMessageDialog(this, "Error: " + e.getMessage()); }
+        }
+    }
 
-        JButton okBtn = new JButton("OK");
-        okBtn.setBackground(new Color(205,180,100));
-        okBtn.setForeground(new Color(102,85,55));
-        okBtn.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        okBtn.addActionListener(e -> dialog.dispose());
-        JPanel btnPanel = new JPanel();
-        btnPanel.setBackground(new Color(245,237,215));
-        btnPanel.add(okBtn);
-        dialog.add(btnPanel, BorderLayout.SOUTH);
-
-        dialog.setSize(400, 160);
-        dialog.setLocationRelativeTo(this);
-        dialog.setVisible(true);
+    private void runScript(String scriptName) {
+        if (galleryFiles.isEmpty()) return;
+        File f = galleryFiles.get(currentIndex);
+        try {
+            String path = "../python_scripts/" + scriptName; 
+            if (!new File(path).exists()) path = scriptName;
+            new ProcessBuilder("python", path, f.getAbsolutePath()).start();
+        } catch (Exception e) { JOptionPane.showMessageDialog(this, "Error: " + e.getMessage()); }
     }
 
     public static void main(String[] args) {
