@@ -1,179 +1,391 @@
 import java.awt.*;
 import java.awt.event.*;
 import java.io.*;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
+import java.util.prefs.Preferences;
 import javax.swing.*;
-import javax.swing.border.EmptyBorder;
+import javax.swing.border.*;
 
 public class MainWindow extends JFrame {
 
-    // --- DATA ---
     private File assetsDir;
-    private boolean isDarkMode = false; 
+    private String currentTheme = "LIGHT";
+    private String currentFilter = "ALL";
+    private Preferences prefs;
 
-    // --- UI COMPONENTS ---
-    private JPanel gridPanel;
-    private JLabel statusLabel;
-    private JPanel sidebar;
-    private JPanel mainContent;
+    private JPanel gridPanel, sidebar, mainContent;
     private JScrollPane scrollPane;
-    private JButton btnThemeToggle;
-    private JLabel titleLabel; 
+    private JLabel titleLabel, statusLabel, brandLabel;
+    private JButton btnRefresh, btnFolder;
     
-    // --- THEME COLORS ---
-    private Color BG_MAIN, BG_SIDEBAR, CARD_BG, TEXT_PRIMARY, BORDER_COLOR;
-    private final Color ACCENT_BLUE = new Color(0, 120, 215);
+    // Dynamic Theme Colors
+    private Color BG_MAIN, BG_SIDEBAR, CARD_BG, TEXT_PRIMARY, TEXT_SECONDARY, BORDER_COLOR, ACCENT, NAV_HOVER;
 
     public MainWindow() {
-        // 1. SETUP PATH
-        assetsDir = new File("assets");
-        if (!assetsDir.exists()) assetsDir = new File("C:\\Users\\tanum\\OneDrive\\Desktop\\DynamicWallpaperEngine\\assets");
+        // Load saved folder path
+        prefs = Preferences.userNodeForPackage(MainWindow.class);
+        String savedPath = prefs.get("assetsFolder", "assets");
+        
+        assetsDir = new File(savedPath);
+        if (!assetsDir.exists()) assetsDir = new File("assets");
+        if (!assetsDir.exists()) {
+            assetsDir = new File("C:\\Users\\tanum\\OneDrive\\Desktop\\DynamicWallpaperEngine\\assets");
+        }
         if (!assetsDir.exists()) assetsDir.mkdirs();
 
-        applyThemeColors(); 
+        applyTheme();
         setupUI();
-        
-        // 2. INITIAL LOAD
-        loadLibrary("ALL"); 
+        loadLibrary("ALL");
     }
 
-    private void applyThemeColors() {
-        if (isDarkMode) {
-            BG_MAIN = new Color(30, 30, 30);
-            BG_SIDEBAR = new Color(40, 40, 40);
-            CARD_BG = new Color(50, 50, 50);
-            TEXT_PRIMARY = new Color(240, 240, 240);
-            BORDER_COLOR = new Color(70, 70, 70);
-        } else {
-            BG_MAIN = new Color(245, 247, 250);
-            BG_SIDEBAR = new Color(255, 255, 255);
-            CARD_BG = new Color(255, 255, 255);
-            TEXT_PRIMARY = new Color(33, 37, 41);
-            BORDER_COLOR = new Color(220, 220, 220);
+    private void applyTheme() {
+        switch (currentTheme) {
+            case "DARK":
+                BG_MAIN = new Color(25, 25, 25);
+                BG_SIDEBAR = new Color(35, 35, 35);
+                CARD_BG = new Color(45, 45, 45);
+                TEXT_PRIMARY = new Color(240, 240, 240);
+                TEXT_SECONDARY = new Color(180, 180, 180);
+                BORDER_COLOR = new Color(60, 60, 60);
+                ACCENT = new Color(0, 150, 255);
+                NAV_HOVER = new Color(55, 55, 55);
+                break;
+            case "RETRO":
+                BG_MAIN = new Color(20, 10, 40);
+                BG_SIDEBAR = new Color(40, 20, 60);
+                CARD_BG = new Color(60, 30, 80);
+                TEXT_PRIMARY = new Color(255, 200, 255);
+                TEXT_SECONDARY = new Color(200, 150, 255);
+                BORDER_COLOR = new Color(150, 50, 200);
+                ACCENT = new Color(255, 0, 150);
+                NAV_HOVER = new Color(70, 40, 90);
+                break;
+            default: // LIGHT
+                BG_MAIN = new Color(248, 249, 250);
+                BG_SIDEBAR = new Color(255, 255, 255);
+                CARD_BG = new Color(255, 255, 255);
+                TEXT_PRIMARY = new Color(33, 37, 41);
+                TEXT_SECONDARY = new Color(108, 117, 125);
+                BORDER_COLOR = new Color(230, 230, 230);
+                ACCENT = new Color(0, 120, 215);
+                NAV_HOVER = new Color(245, 245, 245);
         }
     }
 
-    private void toggleTheme() {
-        isDarkMode = !isDarkMode;
-        applyThemeColors();
+    private void switchTheme(String theme) {
+        currentTheme = theme;
+        applyTheme();
+        refreshUI();
         
+        // Update button colors immediately
+        if (btnRefresh != null) {
+            btnRefresh.setBackground(ACCENT);
+            btnRefresh.repaint();
+        }
+        if (btnFolder != null) {
+            btnFolder.setBackground(ACCENT);
+            btnFolder.repaint();
+        }
+        
+        loadLibrary(currentFilter);
+    }
+
+    private void refreshUI() {
         sidebar.setBackground(BG_SIDEBAR);
-        sidebar.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, BORDER_COLOR));
         mainContent.setBackground(BG_MAIN);
         gridPanel.setBackground(BG_MAIN);
         scrollPane.setBackground(BG_MAIN);
-        titleLabel.setForeground(TEXT_PRIMARY);
+        scrollPane.getViewport().setBackground(BG_MAIN);
         
-        loadLibrary("ALL"); 
-        btnThemeToggle.setText(isDarkMode ? "☀ Light Mode" : "🌙 Dark Mode");
+        titleLabel.setForeground(TEXT_PRIMARY);
+        statusLabel.setForeground(TEXT_SECONDARY);
+        brandLabel.setForeground(ACCENT);
+        
+        sidebar.removeAll();
+        buildSidebar();
+        sidebar.revalidate();
+        sidebar.repaint();
     }
 
     private void setupUI() {
-        setTitle("Wallpaper Engine");
-        setSize(1200, 800);
+        setTitle("Dynamic Windows Wallpaper");
+        
+        // Get screen bounds (excludes taskbar automatically)
+        GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
+        Rectangle screenBounds = ge.getMaximumWindowBounds();
+        
+        // Use 85% of available screen space
+        int windowWidth = (int)(screenBounds.width * 0.85);
+        int windowHeight = (int)(screenBounds.height * 0.85);
+        
+        setSize(windowWidth, windowHeight);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
         setLayout(new BorderLayout());
 
-        // --- SIDEBAR ---
+        // Enable smoother rendering
+        System.setProperty("awt.useSystemAAFontSettings","on");
+        System.setProperty("swing.aatext", "true");
+
+        // === SIDEBAR ===
         sidebar = new JPanel();
         sidebar.setLayout(new BoxLayout(sidebar, BoxLayout.Y_AXIS));
         sidebar.setBackground(BG_SIDEBAR);
-        sidebar.setPreferredSize(new Dimension(220, 0));
-        sidebar.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, BORDER_COLOR));
-
-        JLabel brand = new JLabel("Wallpaper Engine");
-        brand.setFont(new Font("Segoe UI", Font.BOLD, 18));
-        brand.setForeground(ACCENT_BLUE);
-        brand.setBorder(new EmptyBorder(20, 20, 30, 20));
-        brand.setAlignmentX(Component.LEFT_ALIGNMENT);
-        sidebar.add(brand);
-
-        // --- NAVIGATION BUTTONS ---
-        sidebar.add(createFilterButton("All Wallpapers", "ALL"));
-        sidebar.add(createFilterButton("Images Only", "IMG"));
-        sidebar.add(createFilterButton("Videos Only", "VID"));
-        sidebar.add(createFilterButton("GIFs Only", "GIF")); // NEW BUTTON
+        sidebar.setPreferredSize(new Dimension(250, 0));
         
-        sidebar.add(Box.createVerticalGlue()); 
-
-        btnThemeToggle = new JButton("🌙 Dark Mode");
-        styleButton(btnThemeToggle);
-        btnThemeToggle.addActionListener(e -> toggleTheme());
-        sidebar.add(btnThemeToggle);
-        sidebar.add(Box.createVerticalStrut(10));
-
-        JButton btnOpenFolder = new JButton("📂 Open Folder");
-        styleButton(btnOpenFolder);
-        btnOpenFolder.addActionListener(e -> openFolder());
-        sidebar.add(btnOpenFolder);
-        sidebar.add(Box.createVerticalStrut(20));
-
+        buildSidebar();
         add(sidebar, BorderLayout.WEST);
 
-        // --- MAIN CONTENT ---
+        // === MAIN CONTENT ===
         mainContent = new JPanel(new BorderLayout());
         mainContent.setBackground(BG_MAIN);
 
-        JPanel headerBar = new JPanel(new BorderLayout());
-        headerBar.setOpaque(false);
-        headerBar.setBorder(new EmptyBorder(20, 30, 10, 30));
-        
+        // Header
+        JPanel header = new JPanel(new BorderLayout());
+        header.setOpaque(false);
+        header.setBorder(new EmptyBorder(30, 40, 20, 40));
+
         titleLabel = new JLabel("Library");
-        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 24));
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 32));
         titleLabel.setForeground(TEXT_PRIMARY);
-        statusLabel = new JLabel("Ready");
-        statusLabel.setForeground(Color.GRAY);
 
-        headerBar.add(titleLabel, BorderLayout.WEST);
-        headerBar.add(statusLabel, BorderLayout.EAST);
-        mainContent.add(headerBar, BorderLayout.NORTH);
+        // Right side buttons
+        JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 0));
+        rightPanel.setOpaque(false);
 
-        gridPanel = new JPanel(new WrapLayout(FlowLayout.LEFT, 20, 20));
+        btnRefresh = createHeaderButton("Refresh");
+        btnRefresh.addActionListener(e -> {
+            statusLabel.setText("Refreshing...");
+            loadLibrary(currentFilter);
+            Timer timer = new Timer(1000, evt -> statusLabel.setText("Ready"));
+            timer.setRepeats(false);
+            timer.start();
+        });
+
+        btnFolder = createHeaderButton("Browse");
+        btnFolder.addActionListener(e -> openNativeFileDialog());
+
+        rightPanel.add(btnRefresh);
+        rightPanel.add(btnFolder);
+
+        header.add(titleLabel, BorderLayout.WEST);
+        header.add(rightPanel, BorderLayout.EAST);
+        mainContent.add(header, BorderLayout.NORTH);
+
+        // Grid
+        gridPanel = new JPanel(new WrapLayout(FlowLayout.LEFT, 25, 25));
         gridPanel.setBackground(BG_MAIN);
-        gridPanel.setBorder(new EmptyBorder(10, 10, 10, 10));
+        gridPanel.setBorder(new EmptyBorder(20, 20, 20, 20));
 
         scrollPane = new JScrollPane(gridPanel);
         scrollPane.setBorder(null);
-        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(20);
+        scrollPane.getViewport().setBackground(BG_MAIN);
+        
+        // Smooth scrolling with custom scrollbar
+        scrollPane.getVerticalScrollBar().setUI(new javax.swing.plaf.basic.BasicScrollBarUI() {
+            @Override
+            protected void configureScrollBarColors() {
+                this.thumbColor = BORDER_COLOR;
+                this.trackColor = BG_MAIN;
+            }
+            @Override
+            protected JButton createDecreaseButton(int orientation) {
+                return createZeroButton();
+            }
+            @Override    
+            protected JButton createIncreaseButton(int orientation) {
+                return createZeroButton();
+            }
+            private JButton createZeroButton() {
+                JButton button = new JButton();
+                button.setPreferredSize(new Dimension(0, 0));
+                return button;
+            }
+        });
+        
         mainContent.add(scrollPane, BorderLayout.CENTER);
-
         add(mainContent, BorderLayout.CENTER);
+        
+        // Clean up wallpapers on close
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                killAllWallpapers();
+            }
+        });
     }
 
-    private void styleButton(JButton btn) {
-        btn.setAlignmentX(Component.LEFT_ALIGNMENT);
-        btn.setMaximumSize(new Dimension(180, 40));
-        btn.setBackground(new Color(230, 230, 230));
+    private JButton createHeaderButton(String text) {
+        JButton btn = new JButton(text) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                
+                // Rounded rectangle background
+                g2.setColor(getBackground());
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 12, 12);
+                
+                // Text
+                g2.setColor(getForeground());
+                g2.setFont(getFont());
+                FontMetrics fm = g2.getFontMetrics();
+                int x = (getWidth() - fm.stringWidth(getText())) / 2;
+                int y = ((getHeight() - fm.getHeight()) / 2) + fm.getAscent();
+                g2.drawString(getText(), x, y);
+                
+                g2.dispose();
+            }
+        };
+        
+        btn.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        btn.setForeground(Color.WHITE);
+        btn.setBackground(ACCENT);
         btn.setFocusPainted(false);
-    }
-
-    private JButton createFilterButton(String text, String filterType) {
-        JButton btn = new JButton(text);
-        btn.setAlignmentX(Component.LEFT_ALIGNMENT);
-        btn.setMaximumSize(new Dimension(220, 40));
         btn.setBorderPainted(false);
         btn.setContentAreaFilled(false);
-        btn.setHorizontalAlignment(SwingConstants.LEFT);
-        btn.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-        btn.setForeground(ACCENT_BLUE);
         btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        btn.addActionListener(e -> loadLibrary(filterType));
+        btn.setPreferredSize(new Dimension(100, 38));
+        
+        btn.addMouseListener(new MouseAdapter() {
+            public void mouseEntered(MouseEvent e) { 
+                btn.setBackground(new Color(
+                    Math.min(255, ACCENT.getRed() + 30),
+                    Math.min(255, ACCENT.getGreen() + 30),
+                    Math.min(255, ACCENT.getBlue() + 30)
+                ));
+                btn.repaint();
+            }
+            public void mouseExited(MouseEvent e) { 
+                btn.setBackground(ACCENT);
+                btn.repaint();
+            }
+        });
+        
         return btn;
     }
 
-    // --- LIBRARY LOADING LOGIC ---
-    private void loadLibrary(String filter) {
-        System.out.println("Filter: " + filter);
-        gridPanel.removeAll();
+    private void buildSidebar() {
+        brandLabel = new JLabel("<html><b>Wallpaper</b><br>Engine</html>");
+        brandLabel.setFont(new Font("Segoe UI", Font.BOLD, 24));
+        brandLabel.setForeground(ACCENT);
+        brandLabel.setBorder(new EmptyBorder(35, 30, 45, 30));
+        brandLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        sidebar.add(brandLabel);
 
+        sidebar.add(createSectionLabel("LIBRARY"));
+        sidebar.add(createNavButton("All Wallpapers", "ALL"));
+        sidebar.add(createNavButton("Images Only", "IMG"));
+        sidebar.add(createNavButton("Videos Only", "VID"));
+        sidebar.add(createNavButton("GIFs Only", "GIF"));
+        
+        sidebar.add(Box.createVerticalStrut(15));
+        sidebar.add(createSeparator());
+        sidebar.add(Box.createVerticalStrut(15));
+        
+        sidebar.add(createSectionLabel("THEMES"));
+        sidebar.add(createThemeButton("Light", "LIGHT"));
+        sidebar.add(createThemeButton("Dark", "DARK"));
+        sidebar.add(createThemeButton("Retro", "RETRO"));
+        
+        sidebar.add(Box.createVerticalGlue());
+        
+        sidebar.add(Box.createVerticalStrut(20));
+        sidebar.add(createSeparator());
+        sidebar.add(Box.createVerticalStrut(12));
+        
+        statusLabel = new JLabel("Ready");
+        statusLabel.setFont(new Font("Segoe UI", Font.ITALIC, 11));
+        statusLabel.setForeground(TEXT_SECONDARY);
+        statusLabel.setBorder(new EmptyBorder(5, 30, 25, 30));
+        statusLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        sidebar.add(statusLabel);
+    }
+
+    private JSeparator createSeparator() {
+        JSeparator sep = new JSeparator(SwingConstants.HORIZONTAL);
+        sep.setMaximumSize(new Dimension(210, 1));
+        sep.setForeground(BORDER_COLOR);
+        sep.setBackground(BORDER_COLOR);
+        sep.setAlignmentX(Component.LEFT_ALIGNMENT);
+        return sep;
+    }
+
+    private JLabel createSectionLabel(String text) {
+        JLabel lbl = new JLabel(text);
+        lbl.setFont(new Font("Segoe UI", Font.BOLD, 10));
+        lbl.setForeground(TEXT_SECONDARY);
+        lbl.setBorder(new EmptyBorder(8, 30, 10, 30));
+        lbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        return lbl;
+    }
+
+    private JButton createNavButton(String text, String filter) {
+        JButton btn = new JButton(text);
+        btn.setAlignmentX(Component.LEFT_ALIGNMENT);
+        btn.setMaximumSize(new Dimension(250, 42));
+        btn.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        btn.setForeground(TEXT_PRIMARY);
+        btn.setBackground(BG_SIDEBAR);
+        btn.setBorderPainted(false);
+        btn.setFocusPainted(false);
+        btn.setContentAreaFilled(false);
+        btn.setHorizontalAlignment(SwingConstants.LEFT);
+        btn.setBorder(new EmptyBorder(11, 30, 11, 30));
+        btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+        btn.addMouseListener(new MouseAdapter() {
+            public void mouseEntered(MouseEvent e) { 
+                btn.setBackground(NAV_HOVER); 
+                btn.setContentAreaFilled(true); 
+            }
+            public void mouseExited(MouseEvent e) { 
+                btn.setContentAreaFilled(false); 
+            }
+        });
+        btn.addActionListener(e -> {
+            currentFilter = filter;
+            loadLibrary(filter);
+        });
+        return btn;
+    }
+
+    private JButton createThemeButton(String text, String theme) {
+        JButton btn = new JButton(text);
+        btn.setAlignmentX(Component.LEFT_ALIGNMENT);
+        btn.setMaximumSize(new Dimension(250, 42));
+        btn.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        btn.setForeground(TEXT_PRIMARY);
+        btn.setBackground(BG_SIDEBAR);
+        btn.setBorderPainted(false);
+        btn.setFocusPainted(false);
+        btn.setContentAreaFilled(false);
+        btn.setHorizontalAlignment(SwingConstants.LEFT);
+        btn.setBorder(new EmptyBorder(11, 30, 11, 30));
+        btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+        btn.addMouseListener(new MouseAdapter() {
+            public void mouseEntered(MouseEvent e) { 
+                btn.setBackground(NAV_HOVER); 
+                btn.setContentAreaFilled(true); 
+            }
+            public void mouseExited(MouseEvent e) { 
+                btn.setContentAreaFilled(false); 
+            }
+        });
+        btn.addActionListener(e -> switchTheme(theme));
+        return btn;
+    }
+
+    private void loadLibrary(String filter) {
+        gridPanel.removeAll();
+        
         if (assetsDir.exists()) {
             File[] files = assetsDir.listFiles();
-            if (files != null) Arrays.sort(files);
-
             if (files != null) {
+                Arrays.sort(files);
+                
                 for (File f : files) {
                     String n = f.getName().toLowerCase();
                     
@@ -181,20 +393,21 @@ public class MainWindow extends JFrame {
                     boolean isGif = n.endsWith(".gif");
                     boolean isStatic = n.endsWith(".jpg") || n.endsWith(".png") || n.endsWith(".jpeg");
 
-                    if (!isMp4 && !isGif && !isStatic) continue; 
+                    if (!isMp4 && !isGif && !isStatic) continue;
 
-                    // PREVENT DUPLICATES (Hide GIF if it is a video preview)
+                    boolean isPreview = false;
                     if (isGif) {
-                        File matchingVideo = new File(assetsDir, f.getName().replace(".gif", ".mp4"));
-                        if (matchingVideo.exists()) continue; 
+                        String baseName = f.getName().substring(0, f.getName().lastIndexOf("."));
+                        File matchingMp4 = new File(assetsDir, baseName + ".mp4");
+                        if (matchingMp4.exists()) isPreview = true;
                     }
+                    
+                    if (isPreview) continue;
 
-                    // APPLY FILTER
-                    boolean show = false;
-                    if (filter.equals("ALL")) show = true;
-                    else if (filter.equals("VID") && isMp4) show = true;
-                    else if (filter.equals("GIF") && isGif) show = true; // GIF Only
-                    else if (filter.equals("IMG") && isStatic) show = true; // Static Only
+                    boolean show = filter.equals("ALL") ||
+                                   (filter.equals("VID") && isMp4) ||
+                                   (filter.equals("GIF") && isGif) ||
+                                   (filter.equals("IMG") && isStatic);
 
                     if (show) addCard(f);
                 }
@@ -206,68 +419,83 @@ public class MainWindow extends JFrame {
         checkPreviews();
     }
 
+    private String removeExtension(String filename) {
+        int lastDot = filename.lastIndexOf(".");
+        if (lastDot > 0) return filename.substring(0, lastDot);
+        return filename;
+    }
+
     private void addCard(File f) {
         JPanel card = new JPanel(new BorderLayout());
-        card.setPreferredSize(new Dimension(240, 220)); 
+        card.setPreferredSize(new Dimension(260, 240));
         card.setBackground(CARD_BG);
-        card.setBorder(BorderFactory.createLineBorder(BORDER_COLOR, 1));
+        card.setBorder(new CompoundBorder(
+            new LineBorder(BORDER_COLOR, 1, true),
+            new EmptyBorder(8, 8, 8, 8)
+        ));
 
         JLabel thumb = new JLabel();
         thumb.setHorizontalAlignment(SwingConstants.CENTER);
-        thumb.setBackground(isDarkMode ? new Color(60,60,60) : new Color(240,240,240));
+        thumb.setBackground(BG_MAIN);
         thumb.setOpaque(true);
-        thumb.setPreferredSize(new Dimension(240, 160)); 
-        
+        thumb.setPreferredSize(new Dimension(244, 170));
+
         ImageIcon icon = getThumbnail(f);
-        if (icon != null) {
-            thumb.setIcon(icon);
-            thumb.setText("");
-        } else {
-            thumb.setText("Generating...");
+        if (icon != null) thumb.setIcon(icon);
+        else {
+            thumb.setText("Loading...");
+            thumb.setForeground(TEXT_SECONDARY);
         }
 
         JPanel info = new JPanel(new BorderLayout());
         info.setBackground(CARD_BG);
-        info.setBorder(new EmptyBorder(5, 5, 5, 5));
-        
-        JLabel name = new JLabel(f.getName());
-        name.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        info.setBorder(new EmptyBorder(10, 5, 5, 5));
+
+        JLabel name = new JLabel(removeExtension(f.getName()));
+        name.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         name.setForeground(TEXT_PRIMARY);
-        
+
         info.add(name, BorderLayout.CENTER);
         card.add(thumb, BorderLayout.CENTER);
         card.add(info, BorderLayout.SOUTH);
 
         thumb.addMouseListener(new MouseAdapter() {
             public void mouseClicked(MouseEvent e) { applyWallpaper(f); }
-            public void mouseEntered(MouseEvent e) { card.setBorder(BorderFactory.createLineBorder(ACCENT_BLUE, 2)); }
-            public void mouseExited(MouseEvent e) { card.setBorder(BorderFactory.createLineBorder(BORDER_COLOR, 1)); }
+            public void mouseEntered(MouseEvent e) { 
+                card.setBorder(new CompoundBorder(
+                    new LineBorder(ACCENT, 2, true),
+                    new EmptyBorder(7, 7, 7, 7)
+                ));
+            }
+            public void mouseExited(MouseEvent e) { 
+                card.setBorder(new CompoundBorder(
+                    new LineBorder(BORDER_COLOR, 1, true),
+                    new EmptyBorder(8, 8, 8, 8)
+                ));
+            }
         });
 
         gridPanel.add(card);
     }
 
     private ImageIcon getThumbnail(File f) {
-        String name = f.getName().toLowerCase();
-        String path = f.getAbsolutePath();
+        String n = f.getName().toLowerCase();
         try {
-            if (name.endsWith(".mp4") || name.endsWith(".avi")) {
-                String base = path.substring(0, path.lastIndexOf("."));
-                File gif = new File(base + ".gif");
+            if (n.endsWith(".mp4") || n.endsWith(".avi")) {
+                String baseName = f.getName().substring(0, f.getName().lastIndexOf("."));
+                File gif = new File(assetsDir, baseName + ".gif");
                 if (gif.exists()) return new ImageIcon(gif.getAbsolutePath());
-                return null; 
-            } else if (name.endsWith(".gif")) {
-                return new ImageIcon(path); // No scale for GIFs
-            } else {
-                ImageIcon icon = new ImageIcon(path);
-                Image img = icon.getImage();
-                if (img.getWidth(null) > 0) {
-                    Image scaled = img.getScaledInstance(240, 160, Image.SCALE_SMOOTH);
-                    return new ImageIcon(scaled);
-                }
                 return null;
+            } else if (n.endsWith(".gif")) {
+                return new ImageIcon(f.getAbsolutePath());
+            } else {
+                ImageIcon icon = new ImageIcon(f.getAbsolutePath());
+                Image scaled = icon.getImage().getScaledInstance(244, 170, Image.SCALE_SMOOTH);
+                return new ImageIcon(scaled);
             }
-        } catch (Exception e) { return null; }
+        } catch (Exception e) { 
+            return null; 
+        }
     }
 
     private void checkPreviews() {
@@ -279,24 +507,53 @@ public class MainWindow extends JFrame {
         }).start();
     }
 
-    private void applyWallpaper(File f) {
-        String name = f.getName().toLowerCase();
-        String script = name.endsWith(".mp4") ? "video_wallpaper.py" : "set_static_wallpaper.py";
-        if(name.endsWith(".gif")) script = "animated_wallpaper.py";
-        
-        statusLabel.setText("Applying: " + f.getName());
+    // Kill all Python wallpaper processes
+    private void killAllWallpapers() {
         try {
-            new ProcessBuilder("python", "../python_scripts/" + script, f.getAbsolutePath()).start();
-        } catch (IOException e) { e.printStackTrace(); }
+            // Method 1: Kill by command line
+            ProcessBuilder pb1 = new ProcessBuilder("cmd.exe", "/c", 
+                "for /f \"tokens=2\" %i in ('tasklist /FI \"IMAGENAME eq python.exe\" /FO LIST ^| findstr \"PID:\"') do taskkill /F /PID %i");
+            pb1.start().waitFor();
+            
+            // Method 2: Kill all python.exe processes
+            ProcessBuilder pb2 = new ProcessBuilder("taskkill", "/F", "/IM", "python.exe");
+            pb2.start().waitFor();
+            
+            Thread.sleep(800);
+            
+            System.out.println("Killed all wallpaper processes");
+        } catch (Exception e) {
+            System.out.println("Error killing wallpapers: " + e.getMessage());
+        }
     }
 
-    private void openFolder() {
-        JFileChooser c = new JFileChooser();
-        c.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-        if (c.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            assetsDir = c.getSelectedFile();
-            loadLibrary("ALL");
+    private void applyWallpaper(File f) {
+        // Kill all previous wallpapers first
+        killAllWallpapers();
+        
+        String n = f.getName().toLowerCase();
+        String script = n.endsWith(".mp4") ? "video_wallpaper.py" : n.endsWith(".gif") ? "animated_wallpaper.py" : "set_static_wallpaper.py";
+        statusLabel.setText("Applying: " + removeExtension(f.getName()));
+        
+        try {
+            new ProcessBuilder("python", "../python_scripts/" + script, f.getAbsolutePath()).start();
+        } catch (IOException e) { 
+            e.printStackTrace(); 
         }
+    }
+
+    private void openNativeFileDialog() {
+        FileDialog fd = new FileDialog(this, "Select Assets Folder", FileDialog.LOAD);
+        fd.setDirectory(assetsDir.getAbsolutePath());
+        System.setProperty("apple.awt.fileDialogForDirectories", "true");
+        fd.setVisible(true);
+        String selectedDir = fd.getDirectory();
+        if (selectedDir != null) {
+            assetsDir = new File(selectedDir);
+            prefs.put("assetsFolder", assetsDir.getAbsolutePath());
+            loadLibrary(currentFilter);
+        }
+        System.setProperty("apple.awt.fileDialogForDirectories", "false");
     }
 
     public static void main(String[] args) {
